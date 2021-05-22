@@ -3,13 +3,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ClockIcon, CalendarIcon, LocationMarkerIcon } from '@heroicons/react/solid';
 import prisma from '../../lib/prisma';
-import {collectPageParameters, telemetryEventTypes, useTelemetry} from "../../lib/telemetry";
+import { collectPageParameters, telemetryEventTypes, useTelemetry } from "../../lib/telemetry";
 import { useEffect, useState } from "react";
 import dayjs from 'dayjs';
 import 'react-phone-number-input/style.css';
 import PhoneInput from 'react-phone-number-input';
 import { LocationType } from '../../lib/location';
 import Avatar from '../../components/Avatar';
+import axios from 'axios';
 
 export default function Book(props) {
     const router = useRouter();
@@ -17,7 +18,7 @@ export default function Book(props) {
 
     const locations = props.eventType.locations || [];
 
-    const [ selectedLocation, setSelectedLocation ] = useState<LocationType>(locations.length === 1 ? locations[0].type : '');
+    const [selectedLocation, setSelectedLocation] = useState<LocationType>(locations.length === 1 ? locations[0].type : '');
     const telemetry = useTelemetry();
     useEffect(() => {
         telemetry.withJitsu(jitsu => jitsu.track(telemetryEventTypes.timeSelected, collectPageParameters()));
@@ -31,9 +32,10 @@ export default function Book(props) {
     const locationLabels = {
         [LocationType.InPerson]: 'In-person meeting',
         [LocationType.Phone]: 'Phone call',
+        [LocationType.Zoom]: 'Zoom Meeting',
     };
 
-    const bookingHandler = event => {
+    const bookingHandler = async event => {
         event.preventDefault();
 
         let payload = {
@@ -44,25 +46,36 @@ export default function Book(props) {
             notes: event.target.notes.value
         };
 
-        if (selectedLocation) {
-            payload['location'] = selectedLocation === LocationType.Phone ? event.target.phone.value : locationInfo(selectedLocation).address;
-        }
+        /* Not required since zoom meeting is primary location now */
+
+        // if (selectedLocation) {
+        //     payload['location'] = selectedLocation === LocationType.Phone ? event.target.phone.value : locationInfo(selectedLocation).address;
+        // }
+
+        payload['location'] = LocationType.Zoom;
 
         telemetry.withJitsu(jitsu => jitsu.track(telemetryEventTypes.bookingConfirmed, collectPageParameters()));
-        const res = fetch(
+        const res: any = await axios.post(
             '/api/book/' + user,
+            payload,
             {
-                body: JSON.stringify(payload),
                 headers: {
                     'Content-Type': 'application/json'
-                },
-                method: 'POST'
+                }
             }
-        );
+        ).catch(err => console.error('Event creation failed', err));
+        const eventDetails: any = res.data || {};
+        const { meeting = {} } = eventDetails;
+        console.log(eventDetails);
 
         let successUrl = `/success?date=${date}&type=${props.eventType.id}&user=${props.user.username}`;
+
         if (payload['location']) {
             successUrl += "&location=" + encodeURIComponent(payload['location']);
+        }
+
+        if (meeting['join_url']) {
+            successUrl += "&meetingUrl=" + encodeURIComponent(meeting['join_url']);
         }
 
         router.push(successUrl);
@@ -113,7 +126,7 @@ export default function Book(props) {
                                 {locations.length > 1 && (
                                     <div className="mb-4">
                                         <span className="block text-sm font-medium text-gray-700">Location</span>
-                                        {locations.map( (location) => (
+                                        {locations.map((location) => (
                                             <label key={location.type} className="block">
                                                 <input type="radio" required onChange={(e) => setSelectedLocation(e.target.value)} className="location" name="location" value={location.type} checked={selectedLocation === location.type} />
                                                 <span className="text-sm ml-2">{locationLabels[location.type]}</span>
@@ -122,14 +135,17 @@ export default function Book(props) {
                                     </div>
                                 )}
                                 {selectedLocation === LocationType.Phone && (<div className="mb-4">
-                                   <label htmlFor="phone" className="block text-sm font-medium text-gray-700">Phone Number</label>
-                                   <div className="mt-1">
-                                       <PhoneInput name="phone" placeholder="Enter phone number" id="phone" required className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md" onChange={() => {}} />
-                                   </div>
+                                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700">Phone Number</label>
+                                    <div className="mt-1">
+                                        <PhoneInput name="phone" placeholder="Enter phone number" id="phone" required className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md" onChange={() => { }} />
+                                    </div>
+                                </div>)}
+                                {selectedLocation === LocationType.Zoom && (<div className="mb-4">
+                                    <label htmlFor="phone" className="block text-sm font-medium text-gray-700">A Zoom Meeting will be scheduled</label>
                                 </div>)}
                                 <div className="mb-4">
                                     <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">Additional notes</label>
-                                    <textarea name="notes" id="notes" rows={3}  className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md" placeholder="Please share anything that will help prepare for our meeting."></textarea>
+                                    <textarea name="notes" id="notes" rows={3} className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md" placeholder="Please share anything that will help prepare for our meeting."></textarea>
                                 </div>
                                 <div>
                                     <button type="submit" className="btn btn-primary">Confirm</button>
@@ -149,12 +165,12 @@ export default function Book(props) {
 export async function getServerSideProps(context) {
     const user = await prisma.user.findFirst({
         where: {
-          username: context.query.user,
+            username: context.query.user,
         },
         select: {
             username: true,
             name: true,
-            email:true,
+            email: true,
             bio: true,
             avatar: true,
             eventTypes: true
@@ -163,7 +179,7 @@ export async function getServerSideProps(context) {
 
     const eventType = await prisma.eventType.findUnique({
         where: {
-          id: parseInt(context.query.type),
+            id: parseInt(context.query.type),
         },
         select: {
             id: true,

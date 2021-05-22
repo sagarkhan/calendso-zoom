@@ -1,6 +1,5 @@
-
 export enum LocationType {
-    InPerson = 'inPerson',
-    Phone = 'phone',
+  InPerson = "inPerson",
+  Phone = "phone",
+  Zoom = "zoom",
 }
-

@@ -23,3 +23,13 @@ body {
 #timeZone input:focus {
     box-shadow: none;
 }
+
+.custom-link-container {
+    margin: 8px 0px;
+}
+.custom-link {
+    cursor: pointer;
+    color: -webkit-link;
+    text-decoration: underline;
+    font-size: 12px;
+}
